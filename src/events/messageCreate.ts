@@ -1,43 +1,67 @@
-import { EmbedBuilder } from 'discord.js';
-import { log } from '../utils';
-import { database } from '../';
+import { DefinedClientCommandOption, TypesEnum, ClientCommandOption, parseChatMessageOption } from '../classes/ClientCommand'
+import { getClientConfig } from '../utils/clientConfig'
+import { getCommand, executeCommand } from '../handlers/commandsHandler'
 
-import Event from '../classes/Event';
-export default new Event('messageCreate', __dirname, async (message) => {
-	if (!message.inGuild()) return;
-	if (new RegExp(message.client.user.toString()).test(message.content)) {
-		return message.reply({
-			embeds: [ new EmbedBuilder()
-				.setColor(message.guild?.members.me.displayHexColor)
-				.setAuthor({ name: message.author.tag, iconURL: message.author.avatarURL() })
-				.setTitle('🚩 Ajuda Rápida')
-				.setDescription(`Olá ${message.author.toString()}, seja bem-vindo à **${message.guild.name}**!\n• Abaixo você encontra alguns campos que acho interessante você ficar ligado:`)
-				.addFields(
-					{
-						name: '❗ Fique atento!',
-						value: [
-							`• Leia nossas <#${(await database.getGuild(message.guildId)).getSetting('rules', 'channel')}> para ajudar a comunidade à se manter ativa!`,
-							`• Fique atento aos <#${(await database.getGuild(message.guildId)).getSetting('warnings', 'channel')}> para não perder nada.`,
-							`• Se liga nas <#${(await database.getGuild(message.guildId)).getSetting('news', 'channel')}> e aproveite todas as vantages!`
-						].join('\n')
-					}, {
-						name: '☕ Tá de boa?',
-						value: [
-							`• Então troca uma ideia com a galera no <#${(await database.getGuild(message.guildId)).getSetting('main_text', 'channel')}>, faça novos amigos!`,
-							`• Entra aí: <#${(await database.getGuild(message.guildId)).getSetting('main_voice', 'channel')}>, bora trocar uma ideia!`
-						].join('\n')
-					}, {
-						name: '😪 Que tédio...',
-						value: [
-							`• Coloca uma música pra **/tocar** e sente aquela vibe!`
-						].join('\n')
-					}
-				)
-				.setFooter({ text: `${message.guild.name || message.client.user.username} © ${new Date().getFullYear()}`, iconURL: message.guild.iconURL() })
-			]
-		}).catch(error => {
-			log(`[ Event - messageCreate ] Can't reply to a mention: ${error}`);
-			message.react('❌').catch(error => log(`[ Event - messageCreate ] Can't react to the message: ${error}`));
-		});
-	}
-});
+import ClientEvent from '../classes/ClientEvent'
+const event = new ClientEvent('messageCreate')
+.setListener(async message => {
+  const prefix = getClientConfig('message_commands_prefix')
+  if (typeof prefix === 'string' && prefix.length > 0 && message.content.startsWith(prefix)) {
+    const commandString = message.content.slice(prefix.length)
+    const commandArgs = commandString.match(/("[^"]*"|'[^']*')|("[^"]*$|'[^']*$)|\S+/g)
+    if (!commandArgs) return
+
+    const args = commandArgs.map(arg => {
+      if (arg.startsWith('"') || arg.startsWith("'")) arg = arg.slice(1)
+      if (arg.endsWith('"') || arg.endsWith("'")) arg = arg.slice(0, arg.length - 1)
+      return arg
+    })
+    
+    const rootCommandName = args.shift() as string
+
+    let commandPath = rootCommandName
+    if (args[0]) {
+      if (getCommand(`${commandPath} ${args[0]}`)) commandPath += ' ' + args.shift()
+      else if (args[1] && getCommand(`${commandPath} ${args[0]} ${args[1]}`)) commandPath += ' ' + args.splice(0, 2).join(' ')
+    }
+
+    const command = getCommand(commandPath)
+    if (!command || !command.execute) return
+
+    const options: { [key: string]: DefinedClientCommandOption[keyof typeof TypesEnum] | undefined } = {}
+
+    if (command.options && command.chatMessageOptionsIndex) {
+      if (args.length < command.options.filter(c => c.required).length) return message.reply(`> Sorry buddy, but you need to specify some parameters to execute this command.\n> - Usage: \`${prefix}${commandPath} ${command.usageString}\``)
+      for (let i = 0; i < args.length; i++) {
+        const optLabel: string = command.chatMessageOptionsIndex[i]
+        const restOption = optLabel.startsWith('...')
+        const optName = restOption ? optLabel.slice(3) : optLabel
+
+        const option = command.options.find(o => o.name === optName) as ClientCommandOption<false>
+
+        // Validates boolean option by it's name(s)
+        if (option.type === TypesEnum.Boolean && [option.name, ...(option.nameLocalizations ? Object.values(option.nameLocalizations) : [])].some(n => n && n === args[i].toLowerCase())) {
+          options[option.name] = true
+          continue
+        }
+
+        const parsedValue = parseChatMessageOption(option.type, restOption ? args.slice(i).join(' ') : args[i], message)
+        if (!parsedValue && option.required) return message.reply(`> Oh no, you need help?\n> Here is how to use this command: \`${prefix}${commandPath} ${command.usageString}\``)
+        else if (parsedValue) {
+          options[optName] = parsedValue
+          if (restOption) break
+        }
+      }
+    }
+
+    await executeCommand(commandPath, message, options)
+    .catch(async error => {
+      console.warn(`Failed to execute command '${prefix}${commandPath}':`, message)
+      console.error(error)
+      
+      await message.reply('> Command execution failed. Please, contact the Developer or an Administrator.')
+    })
+  }
+})
+
+export default event

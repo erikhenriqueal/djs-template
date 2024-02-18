@@ -1,0 +1,17 @@
+{
+  "$schema": "./clientConfig.schema.json",
+  "intents": [
+    "DirectMessages",
+    "GuildMessages",
+    "Guilds",
+    "MessageContent"
+  ],
+  "message_commands_prefix": "!",
+  "rotate_activities": true,
+  "activities": [
+    {
+      "type": 0,
+      "name": "Olá, sou {client-username}!"
+    }
+  ]
+}

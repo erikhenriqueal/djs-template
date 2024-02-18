@@ -1,12 +1,18 @@
 {
   "compilerOptions": {
-    "esModuleInterop": true,
-    "alwaysStrict": true,
     "module": "CommonJS",
-    "target": "ES2022",
-    "outDir": "dist",
-    "resolveJsonModule": true
+    "target": "ESNext",
+    "strict": true,
+    "resolveJsonModule": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "rootDir": "./src",
+    "outDir": "./dist"
   },
-  "include": [ "./src/**/*.*" ],
-  "exclude": [ "./node_modules", "./src/index1.ts" ]
+  "exclude": ["./node_modules", "./dist"],
+  "include": ["./src/**/*.ts" ],
+  "ts-node": {
+    "transpileOnly": true, 
+    "swc": true
+  }
 }
